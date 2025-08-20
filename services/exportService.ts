@@ -1,5 +1,5 @@
-
 import { toPng } from 'html-to-image';
+import jsPDF from 'jspdf';
 import { Project, Edge, ShapeType, Node } from '../types';
 
 function downloadFile(content: string, fileName: string, contentType: string) {
@@ -166,4 +166,67 @@ export function exportToText(project: Project, fileName: string) {
   }
 
   downloadFile(content, fileName, 'text/plain');
+}
+
+export async function exportToPdf(project: Project, svgElement: SVGSVGElement, fileName: string) {
+  if (!project || project.nodes.length === 0) {
+    alert("Cannot export an empty project to PDF.");
+    return;
+  }
+
+  // 1. Calculate bounding box of the entire diagram to determine dimensions
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  project.nodes.forEach(node => {
+    minX = Math.min(minX, node.position.x);
+    minY = Math.min(minY, node.position.y);
+    maxX = Math.max(maxX, node.position.x + node.width);
+    maxY = Math.max(maxY, node.position.y + node.height);
+  });
+
+  const padding = 50;
+  const diagramWidth = maxX - minX;
+  const diagramHeight = maxY - minY;
+  const contentWidth = diagramWidth + padding * 2;
+  const contentHeight = diagramHeight + padding * 2;
+
+  // 2. Clone the SVG and prepare it for rendering without affecting the live canvas
+  const svgToRender = svgElement.cloneNode(true) as SVGSVGElement;
+  const g = svgToRender.querySelector('g');
+
+  if (g) {
+    // Adjust the transform to frame the entire diagram within the new viewport
+    g.setAttribute('transform', `translate(${-minX + padding}, ${-minY + padding}) scale(1)`);
+  }
+  
+  // Set explicit dimensions on the SVG for the rendering engine
+  svgToRender.setAttribute('width', `${contentWidth}`);
+  svgToRender.setAttribute('height', `${contentHeight}`);
+  
+  // Embed all necessary CSS styles into the SVG clone for correct appearance
+  const styledSvg = await embedStyles(svgToRender);
+
+  try {
+    // 3. Convert the prepared SVG to a high-resolution PNG data URL in memory
+    const dataUrl = await toPng(styledSvg as unknown as HTMLElement, {
+      pixelRatio: 2, // Use 2x resolution for high quality
+      width: contentWidth,
+      height: contentHeight,
+      backgroundColor: '#1f2937', // Match canvas background color (bg-gray-800)
+    });
+
+    // 4. Create a PDF with dimensions and orientation matching the diagram
+    const orientation = contentWidth > contentHeight ? 'l' : 'p';
+    const pdf = new jsPDF({
+      orientation,
+      unit: 'px',
+      format: [contentWidth, contentHeight]
+    });
+
+    pdf.addImage(dataUrl, 'PNG', 0, 0, contentWidth, contentHeight);
+    pdf.save(fileName);
+
+  } catch (err) {
+    alert('An error occurred while exporting the PDF. Please check the console for details.');
+    console.error('Failed to export to PDF', err);
+  }
 }

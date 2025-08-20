@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Project } from '../types';
-import { FileDown, FileJson, FileText, Plus, Trash2, FileUp } from './icons';
+import { FileDown, FileJson, FileText, Plus, Trash2, FileUp, FilePdf } from './icons';
 
 interface ProjectPanelProps {
   projects: Project[];
@@ -10,7 +10,7 @@ interface ProjectPanelProps {
   onAddProject: () => void;
   onDeleteProject: (id: string) => void;
   onRenameProject: (id: string, newName: string) => void;
-  onExport: (type: 'png' | 'json' | 'text') => void;
+  onExport: (type: 'png' | 'json' | 'text' | 'pdf') => void;
   onExportAll: () => void;
   onImport: (file: File) => void;
 }
@@ -114,6 +114,7 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
           <h2 className="text-sm font-semibold text-gray-400 mb-2">Export Active Project</h2>
           <div className="space-y-2">
             <button onClick={() => onExport('png')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FileDown className="mr-2" size={16} /> Export as PNG</button>
+            <button onClick={() => onExport('pdf')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FilePdf className="mr-2" size={16} /> Export as PDF</button>
             <button onClick={() => onExport('json')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FileJson className="mr-2" size={16} /> Export as JSON</button>
             <button onClick={() => onExport('text')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FileText className="mr-2" size={16} /> Export as Text</button>
           </div>
