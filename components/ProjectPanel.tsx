@@ -94,7 +94,10 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
                     {project.name}
                   </span>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
+                    onClick={(e) => { 
+                        e.stopPropagation();
+                        onDeleteProject(project.id);
+                    }}
                     className="ml-2 p-1 text-gray-400 hover:text-red-500 rounded-full"
                     aria-label="Delete project"
                   >

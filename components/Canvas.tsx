@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Project, Node, Edge, ShapeType, Position } from '../types';
 import { SHAPE_DIMENSIONS } from '../constants';
@@ -11,11 +12,13 @@ import { getConnectorPos, getOrthogonalPath } from '../services/pathService';
 
 interface CanvasProps {
   project: Project;
+  projects: Project[]; // For linking feature
   updateProject: (project: Project) => void;
   canvasRef: React.RefObject<SVGSVGElement>;
   containerRef: React.RefObject<HTMLDivElement>;
   onNodeContextMenu: (e: React.MouseEvent, nodeId: string) => void;
   onEdgeContextMenu: (e: React.MouseEvent, edgeId: string) => void;
+  onLinkClick: (projectId: string) => void;
   closeContextMenu: () => void;
   editingNodeId: string | null;
   setEditingNodeId: (id: string | null) => void;
@@ -23,6 +26,8 @@ interface CanvasProps {
   setEditingEdgeId: (id: string | null) => void;
   pan: Position;
   setPan: (pan: Position) => void;
+  zoom: number;
+  setZoom: (zoom: number) => void;
   isPanning: boolean;
   setIsPanning: (isPanning: boolean) => void;
   startPan: Position;
@@ -31,11 +36,13 @@ interface CanvasProps {
 
 export const Canvas: React.FC<CanvasProps> = ({ 
     project, 
+    projects,
     updateProject, 
     canvasRef, 
     containerRef,
     onNodeContextMenu,
     onEdgeContextMenu,
+    onLinkClick,
     closeContextMenu,
     editingNodeId,
     setEditingNodeId,
@@ -43,6 +50,8 @@ export const Canvas: React.FC<CanvasProps> = ({
     setEditingEdgeId,
     pan,
     setPan,
+    zoom,
+    setZoom,
     isPanning,
     setIsPanning,
     startPan,
@@ -56,7 +65,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   const nodeMap = new Map(project.nodes.map(n => [n.id, n]));
 
-  const getCanvasCoords = (e: React.MouseEvent | MouseEvent): Position => {
+  const getCanvasCoords = (e: React.MouseEvent | MouseEvent | React.WheelEvent): Position => {
     const svg = canvasRef.current;
     if (!svg) return { x: 0, y: 0 };
     const pt = svg.createSVGPoint();
@@ -66,9 +75,12 @@ export const Canvas: React.FC<CanvasProps> = ({
     return { x: transformed.x, y: transformed.y };
   };
   
-  const getPannedCanvasCoords = (e: React.MouseEvent | MouseEvent): Position => {
-      const coords = getCanvasCoords(e);
-      return { x: coords.x - pan.x, y: coords.y - pan.y };
+  const getWorldCoords = (e: React.MouseEvent | MouseEvent | React.DragEvent): Position => {
+      const svgCoords = getCanvasCoords(e);
+      return {
+          x: (svgCoords.x - pan.x) / zoom,
+          y: (svgCoords.y - pan.y) / zoom,
+      };
   }
 
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -84,16 +96,16 @@ export const Canvas: React.FC<CanvasProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const coords = getPannedCanvasCoords(e);
+    const worldCoords = getWorldCoords(e);
     if (draggedNode && !isPanning) {
       const newNodes = project.nodes.map(n =>
         n.id === draggedNode.id
-          ? { ...n, position: { x: coords.x - draggedNode.offset.x, y: coords.y - draggedNode.offset.y } }
+          ? { ...n, position: { x: worldCoords.x - draggedNode.offset.x, y: worldCoords.y - draggedNode.offset.y } }
           : n
       );
       updateProject({ ...project, nodes: newNodes });
     } else if (connecting) {
-      setConnecting({ ...connecting, tempTarget: coords });
+      setConnecting({ ...connecting, tempTarget: worldCoords });
     } else if (isPanning) {
         setPan({ x: e.clientX - startPan.x, y: e.clientY - startPan.y });
     }
@@ -116,35 +128,26 @@ export const Canvas: React.FC<CanvasProps> = ({
     if (e.button === 2) return; // Ignore right-clicks
     e.stopPropagation();
     setSelectedNodeId(id);
+    setEditingNodeId(null);
     setEditingEdgeId(null);
     closeContextMenu();
     const node = project.nodes.find(n => n.id === id);
     if (!node) return;
-    const coords = getPannedCanvasCoords(e);
+    const worldCoords = getWorldCoords(e);
     setDraggedNode({
       id,
-      offset: { x: coords.x - node.position.x, y: coords.y - node.position.y },
+      offset: { x: worldCoords.x - node.position.x, y: worldCoords.y - node.position.y },
     });
   };
 
   const handleConnectorMouseDown = (nodeId: string, connectorIndex: number, e: React.MouseEvent) => {
     e.stopPropagation();
     closeContextMenu();
-    const node = nodeMap.get(nodeId);
-    if (node?.type === ShapeType.Email) return; // Prevent starting connections from Email nodes
-
-    const startPos = getPannedCanvasCoords(e);
+    const startPos = getWorldCoords(e);
     setConnecting({ sourceId: nodeId, sourceHandleIndex: connectorIndex, tempTarget: startPos });
   };
   
   const handleConnectorMouseUp = (targetNodeId: string, targetHandleIndex: number) => {
-    const targetNode = nodeMap.get(targetNodeId);
-    if (targetNode?.type === ShapeType.Email) {
-        setConnecting(null);
-        setDraggingEdge(null);
-        return;
-    }
-
     if (draggingEdge || connecting) {
         wasConnectionSuccessful.current = true;
     }
@@ -197,12 +200,12 @@ export const Canvas: React.FC<CanvasProps> = ({
     e.stopPropagation();
     
     const targetNode = nodeMap.get(targetNodeId);
-    if (!targetNode || targetNode.type === ShapeType.Email) {
+    if (!targetNode) {
         setConnecting(null);
         return;
     }
 
-    const coords = getPannedCanvasCoords(e);
+    const worldCoords = getWorldCoords(e);
     const connectors = [
         { x: targetNode.width / 2, y: 0 }, // Top
         { x: targetNode.width, y: targetNode.height / 2 }, // Right
@@ -216,7 +219,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     connectors.forEach((conn, index) => {
         const connAbsX = targetNode.position.x + conn.x;
         const connAbsY = targetNode.position.y + conn.y;
-        const distance = Math.pow(coords.x - connAbsX, 2) + Math.pow(coords.y - connAbsY, 2);
+        const distance = Math.pow(worldCoords.x - connAbsX, 2) + Math.pow(worldCoords.y - connAbsY, 2);
 
         if (distance < minDistance) {
             minDistance = distance;
@@ -266,12 +269,15 @@ export const Canvas: React.FC<CanvasProps> = ({
   const handleLabelChange = (nodeId: string, newLabel: string) => {
     const newNodes = project.nodes.map(n => n.id === nodeId ? { ...n, label: newLabel } : n);
     updateProject({ ...project, nodes: newNodes });
-    setEditingNodeId(null);
   };
 
   const handleEdgeLabelChange = (edgeId: string, newLabel: string) => {
     const newEdges = project.edges.map(e => e.id === edgeId ? { ...e, label: newLabel } : e);
     updateProject({ ...project, edges: newEdges });
+  };
+
+  const handleStopEditing = () => {
+    setEditingNodeId(null);
     setEditingEdgeId(null);
   };
 
@@ -287,14 +293,14 @@ export const Canvas: React.FC<CanvasProps> = ({
     const type = event.dataTransfer.getData('application/reactflow') as ShapeType;
     if (!Object.values(ShapeType).includes(type)) return;
 
-    const canvasPosition = getPannedCanvasCoords(event);
+    const worldPos = getWorldCoords(event);
     
     const newNode: Node = {
       id: `node-${Date.now()}`,
       type,
       position: {
-          x: canvasPosition.x - SHAPE_DIMENSIONS[type].width / 2,
-          y: canvasPosition.y - SHAPE_DIMENSIONS[type].height / 2,
+          x: worldPos.x - SHAPE_DIMENSIONS[type].width / 2,
+          y: worldPos.y - SHAPE_DIMENSIONS[type].height / 2,
       },
       label: type,
       ...SHAPE_DIMENSIONS[type]
@@ -302,19 +308,74 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     updateProject({ ...project, nodes: [...project.nodes, newNode] });
   };
+  
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const zoomFactor = 1.1;
+    const newZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
+    const clampedZoom = Math.max(0.2, Math.min(newZoom, 3));
+
+    const pointer = getCanvasCoords(e); // Pointer position in SVG space
+    
+    // Position of pointer in world space before zoom
+    const worldPos = {
+        x: (pointer.x - pan.x) / zoom,
+        y: (pointer.y - pan.y) / zoom,
+    };
+    
+    // New pan to keep the world position under the pointer
+    const newPan = {
+        x: pointer.x - worldPos.x * clampedZoom,
+        y: pointer.y - worldPos.y * clampedZoom,
+    };
+
+    setZoom(clampedZoom);
+    setPan(newPan);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedNodeId && !editingNodeId) {
+      if (editingNodeId || editingEdgeId) return; // Don't act on keys while editing text
+
+      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedNodeId) {
         const newNodes = project.nodes.filter(n => n.id !== selectedNodeId);
         const newEdges = project.edges.filter(edge => edge.source !== selectedNodeId && edge.target !== selectedNodeId);
         updateProject({ ...project, nodes: newNodes, edges: newEdges });
         setSelectedNodeId(null);
       }
+      
+      if (selectedNodeId && e.key.startsWith('Arrow')) {
+            e.preventDefault();
+            const selectedNode = project.nodes.find(n => n.id === selectedNodeId);
+            if (!selectedNode) return;
+
+            const moveAmount = e.shiftKey ? 10 : 1;
+            let newPos = { ...selectedNode.position };
+
+            switch (e.key) {
+                case 'ArrowUp':
+                    newPos.y -= moveAmount;
+                    break;
+                case 'ArrowDown':
+                    newPos.y += moveAmount;
+                    break;
+                case 'ArrowLeft':
+                    newPos.x -= moveAmount;
+                    break;
+                case 'ArrowRight':
+                    newPos.x += moveAmount;
+                    break;
+            }
+            
+            const newNodes = project.nodes.map(n =>
+                n.id === selectedNodeId ? { ...n, position: newPos } : n
+            );
+            updateProject({ ...project, nodes: newNodes });
+        }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, project, updateProject, editingNodeId]);
+  }, [selectedNodeId, project, updateProject, editingNodeId, editingEdgeId]);
   
   const getLivePathForConnecting = () => {
     if (!connecting) return null;
@@ -345,7 +406,18 @@ export const Canvas: React.FC<CanvasProps> = ({
   }
 
   return (
-    <div ref={containerRef} className="w-full h-full overflow-hidden cursor-grab active:cursor-grabbing" onDrop={onDrop} onDragOver={onDragOver}>
+    <div 
+        ref={containerRef} 
+        className="w-full h-full overflow-hidden cursor-grab active:cursor-grabbing" 
+        onDrop={onDrop} 
+        onDragOver={onDragOver}
+        onWheel={handleWheel}
+        onMouseDown={(e) => {
+          if (e.target === containerRef.current) {
+            handleStopEditing();
+          }
+        }}
+    >
       <svg
         ref={canvasRef}
         width="100%"
@@ -361,7 +433,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
           </marker>
         </defs>
-        <g transform={`translate(${pan.x}, ${pan.y})`}>
+        <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
           {project.edges.map(edge => {
             if (draggingEdge?.edgeId === edge.id) return null;
             const sourceNode = nodeMap.get(edge.source);
@@ -376,6 +448,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 isEditing={editingEdgeId === edge.id}
                 onDoubleClick={handleEdgeDoubleClick}
                 onLabelChange={handleEdgeLabelChange}
+                onStopEditing={handleStopEditing}
                 onEdgeDragStart={handleEdgeDragStart}
                 onContextMenu={(e) => onEdgeContextMenu(e, edge.id)}
               />
@@ -407,6 +480,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               <NodeComponent
                 key={node.id}
                 node={node}
+                projects={projects}
                 isSelected={selectedNodeId === node.id}
                 isEditing={editingNodeId === node.id}
                 onMouseDown={handleNodeMouseDown}
@@ -414,7 +488,9 @@ export const Canvas: React.FC<CanvasProps> = ({
                 onNodeMouseUp={handleNodeMouseUpForConnection}
                 onDoubleClick={handleNodeDoubleClick}
                 onLabelChange={handleLabelChange}
+                onStopEditing={handleStopEditing}
                 onContextMenu={(e) => onNodeContextMenu(e, node.id)}
+                onLinkClick={onLinkClick}
               />
             );
           })}

@@ -1,3 +1,4 @@
+
 import { toPng } from 'html-to-image';
 import { Project, Edge, ShapeType, Node } from '../types';
 
@@ -14,12 +15,25 @@ async function embedStyles(svg: SVGSVGElement): Promise<SVGSVGElement> {
     const clonedSvg = svg.cloneNode(true) as SVGSVGElement;
     
     try {
-        // Fetch Tailwind CSS from CDN
-        const cssResponse = await fetch('https://cdn.tailwindcss.com');
-        if (!cssResponse.ok) throw new Error('Failed to fetch stylesheet');
-        const cssText = await cssResponse.text();
+        let cssText = '';
+        const styleSheets = Array.from(document.styleSheets);
         
-        // Create a style element and add it to the defs of the cloned SVG
+        for (const sheet of styleSheets) {
+            try {
+                if (sheet.cssRules) {
+                    cssText += Array.from(sheet.cssRules)
+                        .map(rule => rule.cssText)
+                        .join('\n');
+                }
+            } catch (e) {
+                console.warn("Could not access stylesheet rules for PNG export:", e);
+            }
+        }
+        
+        if (cssText.trim() === '') {
+             throw new Error("No CSS rules found in document stylesheets to embed for export.");
+        }
+
         const style = document.createElement('style');
         style.textContent = cssText;
         
@@ -30,12 +44,13 @@ async function embedStyles(svg: SVGSVGElement): Promise<SVGSVGElement> {
         }
         defs.appendChild(style);
     } catch (error) {
-        console.error("Could not embed Tailwind styles for PNG export:", error);
-        alert("Could not fetch styles for PNG export. The exported image may have incorrect colors.");
+        console.error("Could not embed styles for PNG export:", error);
+        alert("Could not embed styles for PNG export. The exported image may have incorrect colors. Please check the console for details.");
     }
     
     return clonedSvg;
 }
+
 
 export async function exportToPng(element: HTMLElement, fileName: string) {
   const svgElement = element.querySelector('svg');
@@ -75,29 +90,17 @@ export function exportToJson(data: Project | Project[], fileName: string) {
 
 export function exportToText(project: Project, fileName: string) {
   let content = `Project: ${project.name}\n\n`;
-
-  const emailNodes = project.nodes.filter(n => n.type === ShapeType.Email);
-  const flowNodes = project.nodes.filter(n => n.type !== ShapeType.Email);
-
-  if (emailNodes.length > 0) {
-    content += "--- Notification Steps ---\n";
-    emailNodes.forEach(node => {
-      content += `- [${node.type}] ${node.label}\n`;
-    });
-    content += "\n";
-  }
-
   content += "--- Process Flow ---\n";
 
-  if (flowNodes.length === 0) {
+  if (project.nodes.length === 0) {
     content += "No process flow nodes found.\n";
     downloadFile(content, fileName, 'text/plain');
     return;
   }
   
-  const nodeMap = new Map(flowNodes.map(n => [n.id, n]));
-  const outEdges = new Map<string, Edge[]>(flowNodes.map(n => [n.id, []]));
-  const inDegree = new Map<string, number>(flowNodes.map(n => [n.id, 0]));
+  const nodeMap = new Map(project.nodes.map(n => [n.id, n]));
+  const outEdges = new Map<string, Edge[]>(project.nodes.map(n => [n.id, []]));
+  const inDegree = new Map<string, number>(project.nodes.map(n => [n.id, 0]));
 
   project.edges.forEach(edge => {
     if (outEdges.has(edge.source)) {
@@ -143,7 +146,7 @@ export function exportToText(project: Project, fileName: string) {
     }
   }
 
-  const startNodes = flowNodes.filter(n => (inDegree.get(n.id) || 0) === 0);
+  const startNodes = project.nodes.filter(n => (inDegree.get(n.id) || 0) === 0);
   startNodes.forEach(node => {
     if (!visited.has(node.id)) {
       tracePath(node.id, '');
@@ -151,7 +154,7 @@ export function exportToText(project: Project, fileName: string) {
     }
   });
 
-  const unvisitedNodes = flowNodes.filter(n => !visited.has(n.id));
+  const unvisitedNodes = project.nodes.filter(n => !visited.has(n.id));
   if (unvisitedNodes.length > 0) {
     content += "\n--- Other Flows or Unconnected Nodes ---\n";
     unvisitedNodes.forEach(node => {

@@ -10,57 +10,33 @@ type NodeMap = Map<string, Node>;
 export function autoLayout(nodes: Node[], edges: Edge[], orientation: 'horizontal' | 'vertical' = 'horizontal'): { newNodes: Node[], newEdges: Edge[] } {
   if (nodes.length === 0) return { newNodes: [], newEdges: [] };
 
-  const emailNodes = nodes.filter(n => n.type === ShapeType.Email);
-  const flowNodes = nodes.filter(n => n.type !== ShapeType.Email);
+  const nodeMap: NodeMap = new Map(nodes.map(n => [n.id, n]));
+  const adj: AdjacencyList = new Map(nodes.map(n => [n.id, []]));
+  const revAdj: ReverseAdjList = new Map(nodes.map(n => [n.id, []]));
+  const inDegree = new Map(nodes.map(n => [n.id, 0]));
+
+  const backEdges = findAndHandleCycles(nodes, edges, adj, revAdj, inDegree);
+
+  const layers: string[][] = assignLayers(nodes, adj, inDegree);
   
-  if (flowNodes.length === 0) {
-      // Just stack email nodes if that's all there is
-      let currentY = 50;
-      const positionedEmailNodes = emailNodes.map(node => {
-          const newNode = { ...node, position: { x: 50, y: currentY } };
-          currentY += node.height + Y_GAP / 2;
-          return newNode;
-      });
-      return { newNodes: positionedEmailNodes, newEdges: [] };
+  if(layers.length === 0 && nodes.length > 0) { // Handle case with only cycles
+      const positionedNodes = nodes.map((node, i) => ({...node, position: {x: 50, y: 50 + i * 150}}));
+      return { newNodes: positionedNodes, newEdges: edges };
   }
-  
-  const nodeMap: NodeMap = new Map(flowNodes.map(n => [n.id, n]));
-  const adj: AdjacencyList = new Map(flowNodes.map(n => [n.id, []]));
-  const revAdj: ReverseAdjList = new Map(flowNodes.map(n => [n.id, []]));
-  const inDegree = new Map(flowNodes.map(n => [n.id, 0]));
-
-  const flowEdges = edges.filter(e => nodeMap.has(e.source) && nodeMap.has(e.target));
-
-  const backEdges = findAndHandleCycles(flowNodes, flowEdges, adj, revAdj, inDegree);
-
-  const layers: string[][] = assignLayers(flowNodes, adj, inDegree);
   
   const { dummyNodes, virtualEdges } = createVirtualGraph(layers, adj, nodeMap);
   const virtualNodeMap = new Map([...nodeMap, ...dummyNodes]);
   
   const orderedLayers = reduceCrossings(layers, virtualEdges);
 
-  let positionedFlowNodes = assignCoordinates(orderedLayers, virtualNodeMap, orientation);
-  const finalNodeMap = new Map(positionedFlowNodes.map(n => [n.id, n]));
+  let positionedNodes = assignCoordinates(orderedLayers, virtualNodeMap, orientation);
+  const finalNodeMap = new Map(positionedNodes.map(n => [n.id, n]));
   
-  positionedFlowNodes = positionedFlowNodes.filter(n => !n.id.startsWith('dummy-'));
+  positionedNodes = positionedNodes.filter(n => !n.id.startsWith('dummy-'));
   
-  const newEdges = assignEdgeHandles(flowEdges, finalNodeMap, backEdges, orientation);
+  const newEdges = assignEdgeHandles(edges, finalNodeMap, backEdges, orientation);
 
-  // Position email nodes next to the start node
-  const startNode = positionedFlowNodes.find(n => n.type === ShapeType.Start);
-  let startX = startNode ? startNode.position.x - X_GAP : 50;
-  let currentY = startNode ? startNode.position.y : 50;
-  
-  const positionedEmailNodes = emailNodes.map(node => {
-      const newNode = { ...node, position: { x: startX, y: currentY } };
-      currentY += node.height + Y_GAP / 2;
-      return newNode;
-  });
-
-  const newNodes = [...positionedFlowNodes, ...positionedEmailNodes];
-
-  return { newNodes, newEdges };
+  return { newNodes: positionedNodes, newEdges };
 }
 
 function findAndHandleCycles(nodes: Node[], edges: Edge[], adj: AdjacencyList, revAdj: ReverseAdjList, inDegree: Map<string, number>): Set<string> {
@@ -246,6 +222,8 @@ function assignEdgeHandles(edges: Edge[], nodeMap: NodeMap, backEdges: Set<strin
         const source = nodeMap.get(edge.source)!;
         const target = nodeMap.get(edge.target)!;
         const isBackEdge = backEdges.has(`${edge.source}->${edge.target}`);
+
+        if (!source || !target) return edge; // Should not happen in practice
 
         if (isBackEdge) {
             return { ...edge, sourceHandle: (orientation === 'horizontal' ? 2 : 1), targetHandle: (orientation === 'horizontal' ? 2 : 1) };

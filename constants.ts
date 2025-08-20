@@ -1,3 +1,4 @@
+
 import { ShapeType, Project } from './types';
 
 export const SHAPE_DIMENSIONS = {
@@ -23,7 +24,7 @@ export const initialProjects: Project[] = [
       { id: 'n8', type: ShapeType.Process, position: { x: 1050, y: 240 }, label: 'Writer submits final draft', width: 140, height: 80 },
       { id: 'n9', type: ShapeType.Decision, position: { x: 1250, y: 230 }, label: 'Content approved or rejected', width: 140, height: 100 },
       { id: 'n10', type: ShapeType.End, position: { x: 1450, y: 100 }, label: 'Writer publishes content', width: 140, height: 60 },
-      { id: 'n11', type: ShapeType.Email, position: { x: 50, y: 50 }, label: 'Notify manager of new draft', width: 100, height: 100 },
+      { id: 'n11', type: ShapeType.Email, position: { x: 470, y: 50 }, label: 'Notify reviewers', width: 100, height: 100 },
     ],
     edges: [
       { id: 'e1', source: 'n1', target: 'n2', sourceHandle: 1, targetHandle: 3 },
@@ -38,6 +39,7 @@ export const initialProjects: Project[] = [
       { id: 'e10', source: 'n8', target: 'n9', sourceHandle: 1, targetHandle: 3 },
       { id: 'e11', source: 'n9', target: 'n10', label: 'Approved', sourceHandle: 0, targetHandle: 3 },
       { id: 'e12', source: 'n9', target: 'n8', label: 'Rejected', sourceHandle: 2, targetHandle: 2 },
+      { id: 'e13', source: 'n3', target: 'n11', sourceHandle: 0, targetHandle: 2, label: 'Notify' },
     ]
   }
 ];

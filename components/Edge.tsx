@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Edge, Node, Position } from '../types';
 import { getOrthogonalPath } from '../services/pathService';
@@ -9,11 +10,12 @@ interface EdgeProps {
   isEditing: boolean;
   onDoubleClick: (edgeId: string) => void;
   onLabelChange: (edgeId: string, label: string) => void;
+  onStopEditing: () => void;
   onEdgeDragStart: (edgeId: string, handle: 'source' | 'target', e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-export const EdgeComponent: React.FC<EdgeProps> = ({ edge, sourceNode, targetNode, isEditing, onDoubleClick, onLabelChange, onEdgeDragStart, onContextMenu }) => {
+export const EdgeComponent: React.FC<EdgeProps> = ({ edge, sourceNode, targetNode, isEditing, onDoubleClick, onLabelChange, onStopEditing, onEdgeDragStart, onContextMenu }) => {
   const [tempLabel, setTempLabel] = useState(edge.label || '');
   const inputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<number | null>(null);
@@ -32,13 +34,17 @@ export const EdgeComponent: React.FC<EdgeProps> = ({ edge, sourceNode, targetNod
     }
   }, [isEditing, edge.label]);
 
-  const handleLabelSubmit = () => {
+  const handleLabelChangeAndBlur = () => {
       onLabelChange(edge.id, tempLabel);
+      onStopEditing();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') handleLabelSubmit();
-      else if (e.key === 'Escape') onLabelChange(edge.id, edge.label || '');
+      if (e.key === 'Enter') {
+        handleLabelChangeAndBlur();
+      } else if (e.key === 'Escape') {
+        onStopEditing();
+      }
   };
   
   const { path, startPos, endPos, midPoint } = getOrthogonalPath(sourceNode, targetNode, edge);
@@ -122,11 +128,12 @@ export const EdgeComponent: React.FC<EdgeProps> = ({ edge, sourceNode, targetNod
               type="text"
               value={tempLabel}
               onChange={(e) => setTempLabel(e.target.value)}
-              onBlur={handleLabelSubmit}
+              onBlur={handleLabelChangeAndBlur}
               onKeyDown={handleKeyDown}
               className="bg-gray-900 text-white text-center w-full outline-none p-1 rounded border border-indigo-500"
               style={{ fontFamily: 'sans-serif', fontSize: '12px' }}
               onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
             />
           )}
         </foreignObject>

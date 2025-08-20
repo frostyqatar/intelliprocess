@@ -1,10 +1,12 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Node, ShapeType } from '../../types';
+import { Node, ShapeType, Project } from '../../types';
+import { Link } from '../icons';
 
 interface NodeWrapperProps {
   node: Node;
+  projects: Project[];
   isSelected: boolean;
   isEditing: boolean;
   onMouseDown: (id: string, e: React.MouseEvent) => void;
@@ -12,12 +14,15 @@ interface NodeWrapperProps {
   onNodeMouseUp: (id: string, e: React.MouseEvent) => void;
   onDoubleClick: (id: string) => void;
   onLabelChange: (id: string, label: string) => void;
+  onStopEditing: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onLinkClick: (projectId: string) => void;
   children: React.ReactNode;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
   node,
+  projects,
   isSelected,
   isEditing,
   onMouseDown,
@@ -25,7 +30,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   onNodeMouseUp,
   onDoubleClick,
   onLabelChange,
+  onStopEditing,
   onContextMenu,
+  onLinkClick,
   children,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -38,18 +45,22 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       setTimeout(() => textAreaRef.current?.select(), 0);
     }
   }, [isEditing, node.label]);
-
-  const handleLabelSubmit = () => {
-    onLabelChange(node.id, tempLabel);
+  
+  const handleLabelChangeAndBlur = () => {
+    if (tempLabel.trim() === '') {
+        onLabelChange(node.id, node.type); // Revert to default if empty
+    } else {
+        onLabelChange(node.id, tempLabel);
+    }
+    onStopEditing();
   };
   
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleLabelSubmit();
+      handleLabelChangeAndBlur();
     } else if (e.key === 'Escape') {
-      setTempLabel(node.label); // Revert changes
-      onLabelChange(node.id, node.label); // This effectively just cancels editing
+      onStopEditing(); // Cancel editing
     }
   };
 
@@ -60,15 +71,21 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     { x: 0, y: node.height / 2 }, // Left (index 3)
   ];
 
+  const linkedProject = node.linkedProjectId ? projects.find(p => p.id === node.linkedProjectId) : null;
   const isEmailNode = node.type === ShapeType.Email;
   const labelPadding = 8;
+  const linkedLabelHeight = 18;
   const emailIconHeight = 45;
+
+  const mainLabelHeight = isEmailNode 
+    ? node.height - emailIconHeight - 5 
+    : node.height - (labelPadding * 2);
 
   const foreignObjectProps = {
       x: isEmailNode ? 0 : labelPadding,
       y: isEmailNode ? emailIconHeight : labelPadding,
       width: isEmailNode ? node.width : node.width - (labelPadding * 2),
-      height: isEmailNode ? node.height - emailIconHeight - 5 : node.height - (labelPadding * 2),
+      height: linkedProject ? mainLabelHeight - linkedLabelHeight : mainLabelHeight,
   };
 
   return (
@@ -96,11 +113,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               ref={textAreaRef}
               value={tempLabel}
               onChange={(e) => setTempLabel(e.target.value)}
-              onBlur={handleLabelSubmit}
+              onBlur={handleLabelChangeAndBlur}
               onKeyDown={handleKeyDown}
               className="bg-transparent text-white text-center w-full h-full outline-none p-0 resize-none overflow-y-hidden"
               style={{ fontFamily: 'sans-serif', fontSize: '14px' }}
               onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
             />
           )}
         </foreignObject>
@@ -114,7 +132,31 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         </foreignObject>
       )}
 
-      {(isHovered || isSelected) && node.type !== ShapeType.Email && connectors.map((pos, i) => (
+      {linkedProject && (
+        <foreignObject
+          x={labelPadding}
+          y={node.height - linkedLabelHeight - (isEmailNode ? 0 : labelPadding)}
+          width={node.width - (labelPadding * 2)}
+          height={linkedLabelHeight}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div className="w-full h-full flex items-center justify-center text-center text-gray-400 italic text-xs truncate">
+            {`↳ ${linkedProject.name}`}
+          </div>
+        </foreignObject>
+      )}
+
+      {(isHovered || isSelected) && linkedProject && (
+          <g 
+            className="cursor-pointer text-indigo-300 hover:text-white"
+            onClick={(e) => { e.stopPropagation(); onLinkClick(linkedProject.id); }}
+            >
+            <rect x={node.width - 24} y={0} width={24} height={24} fill="transparent" />
+            <Link x={node.width - 20} y={4} />
+          </g>
+      )}
+
+      {(isHovered || isSelected) && connectors.map((pos, i) => (
         <circle
           key={i}
           cx={pos.x}

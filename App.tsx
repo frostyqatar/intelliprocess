@@ -12,7 +12,7 @@ import { exportToPng, exportToJson, exportToText } from './services/exportServic
 import { generateDiagramFromPrompt } from './services/geminiService';
 import { autoLayout } from './services/layoutService';
 import { initialProjects } from './constants';
-import { Focus } from './components/icons';
+import { Focus, ZoomIn, ZoomOut } from './components/icons';
 
 type ContextMenuData = {
   x: number;
@@ -30,8 +30,8 @@ export default function App() {
   const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useLocalStorage<string | null>('gemini-api-key', null);
 
-  // Panning state lifted from Canvas
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
 
@@ -61,9 +61,11 @@ export default function App() {
   };
 
   const deleteProject = (id: string) => {
-    setProjects(prev => prev.filter(p => p.id !== id));
-    if (activeProjectId === id) {
-      setActiveProjectId(projects.length > 1 ? projects[0].id : null);
+    if (window.confirm(`Are you sure you want to delete this project? This action cannot be undone.`)) {
+        setProjects(prev => prev.filter(p => p.id !== id));
+        if (activeProjectId === id) {
+            setActiveProjectId(projects.length > 1 ? projects[0].id : null);
+        }
     }
   };
 
@@ -144,6 +146,7 @@ export default function App() {
       const { nodes, edges } = await generateDiagramFromPrompt(prompt, apiKey);
       const { newNodes, newEdges } = autoLayout(nodes, edges, 'horizontal');
       updateProject({ ...activeProject, nodes: newNodes, edges: newEdges });
+      handleRecenterAndZoom();
       return `Diagram updated successfully based on your request. ${nodes.length} nodes and ${edges.length} edges were created and automatically arranged.`;
     } catch (error) {
       console.error("AI Generation Error:", error);
@@ -156,9 +159,11 @@ export default function App() {
     const { nodes, edges } = activeProject;
     const { newNodes, newEdges } = autoLayout(nodes, edges, orientation);
     updateProject({ ...activeProject, nodes: newNodes, edges: newEdges });
+    // Use a timeout to ensure the DOM has updated before recentering
+    setTimeout(handleRecenterAndZoom, 0);
   };
   
-  const handleRecenter = () => {
+  const handleRecenterAndZoom = () => {
     if (!activeProject || activeProject.nodes.length === 0 || !canvasContainerRef.current) return;
 
     const nodes = activeProject.nodes;
@@ -173,21 +178,48 @@ export default function App() {
 
     const diagramWidth = maxX - minX;
     const diagramHeight = maxY - minY;
+
+    if (diagramWidth === 0 || diagramHeight === 0) {
+        setPan({x: 0, y: 0});
+        setZoom(1);
+        return;
+    }
+
     const diagramCenterX = minX + diagramWidth / 2;
     const diagramCenterY = minY + diagramHeight / 2;
 
     const { clientWidth, clientHeight } = canvasContainerRef.current;
-    const viewportCenterX = clientWidth / 2;
-    const viewportCenterY = clientHeight / 2;
-
+    const padding = 80;
+    
+    const zoomX = (clientWidth - padding * 2) / diagramWidth;
+    const zoomY = (clientHeight - padding * 2) / diagramHeight;
+    const newZoom = Math.min(zoomX, zoomY, 1.5);
+    
     const newPan = {
-        x: viewportCenterX - diagramCenterX,
-        y: viewportCenterY - diagramCenterY
+        x: (clientWidth / 2) - (diagramCenterX * newZoom),
+        y: (clientHeight / 2) - (diagramCenterY * newZoom)
     };
 
     setPan(newPan);
+    setZoom(newZoom);
   };
 
+  const handleZoom = (direction: 'in' | 'out') => {
+      if (!canvasContainerRef.current) return;
+      const { clientWidth, clientHeight } = canvasContainerRef.current;
+      const zoomFactor = 1.2;
+      const newZoom = direction === 'in' ? zoom * zoomFactor : zoom / zoomFactor;
+      const clampedZoom = Math.max(0.2, Math.min(newZoom, 3));
+
+      // Zoom towards the center of the viewport
+      const viewportCenter = { x: clientWidth / 2, y: clientHeight / 2 };
+
+      const worldPos = { x: (viewportCenter.x - pan.x) / zoom, y: (viewportCenter.y - pan.y) / zoom };
+      const newPan = { x: viewportCenter.x - worldPos.x * clampedZoom, y: viewportCenter.y - worldPos.y * clampedZoom };
+      
+      setZoom(clampedZoom);
+      setPan(newPan);
+  };
 
   const handleNodeContextMenu = (e: React.MouseEvent, nodeId: string) => {
     e.preventDefault();
@@ -234,11 +266,13 @@ export default function App() {
             <>
               <Canvas
                 project={activeProject}
+                projects={projects}
                 updateProject={updateProject}
                 canvasRef={canvasRef}
                 containerRef={canvasContainerRef}
                 onNodeContextMenu={handleNodeContextMenu}
                 onEdgeContextMenu={handleEdgeContextMenu}
+                onLinkClick={setActiveProjectId}
                 closeContextMenu={closeContextMenu}
                 editingNodeId={editingNodeId}
                 setEditingNodeId={setEditingNodeId}
@@ -246,18 +280,38 @@ export default function App() {
                 setEditingEdgeId={setEditingEdgeId}
                 pan={pan}
                 setPan={setPan}
+                zoom={zoom}
+                setZoom={setZoom}
                 isPanning={isPanning}
                 setIsPanning={setIsPanning}
                 startPan={startPan}
                 setStartPan={setStartPan}
               />
-              <button 
-                onClick={handleRecenter}
-                className="absolute bottom-4 left-4 bg-gray-700 hover:bg-gray-600 text-gray-200 p-3 rounded-full shadow-lg transition"
-                title="Recenter Diagram"
-              >
-                <Focus size={20} />
-              </button>
+              <div className="absolute bottom-4 left-4 flex flex-col items-start space-y-2">
+                <div className="flex bg-gray-700 rounded-full shadow-lg p-1">
+                    <button 
+                        onClick={() => handleZoom('in')}
+                        className="p-2 text-gray-200 hover:bg-gray-600 rounded-full"
+                        title="Zoom In"
+                    >
+                        <ZoomIn size={20} />
+                    </button>
+                    <button 
+                        onClick={() => handleZoom('out')}
+                        className="p-2 text-gray-200 hover:bg-gray-600 rounded-full"
+                        title="Zoom Out"
+                    >
+                        <ZoomOut size={20} />
+                    </button>
+                </div>
+                <button 
+                  onClick={handleRecenterAndZoom}
+                  className="bg-gray-700 hover:bg-gray-600 text-gray-200 p-3 rounded-full shadow-lg transition"
+                  title="Fit to View"
+                >
+                  <Focus size={20} />
+                </button>
+              </div>
             </>
           ) : (
             <div className="flex items-center justify-center h-full text-gray-400">
@@ -273,7 +327,7 @@ export default function App() {
         apiKey={apiKey}
         setApiKey={setApiKey}
       />
-      {contextMenu && activeProject && <ContextMenu {...contextMenu} project={activeProject} updateProject={updateProject} onClose={closeContextMenu} onRename={handleRenameItem} />}
+      {contextMenu && activeProject && <ContextMenu {...contextMenu} project={activeProject} projects={projects} updateProject={updateProject} onClose={closeContextMenu} onRename={handleRenameItem} />}
     </div>
   );
 }

@@ -18,6 +18,7 @@ export interface Node {
   label: string;
   width: number;
   height: number;
+  linkedProjectId?: string;
 }
 
 export interface Edge {

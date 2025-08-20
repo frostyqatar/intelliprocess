@@ -1,10 +1,12 @@
+
 import React from 'react';
-import { Node } from '../../types';
+import { Node, Project } from '../../types';
 import NodeWrapper from './NodeWrapper';
 import { Mail } from '../icons';
 
 interface NodeProps {
   node: Node;
+  projects: Project[];
   isSelected: boolean;
   isEditing: boolean;
   onMouseDown: (id: string, e: React.MouseEvent) => void;
@@ -12,7 +14,9 @@ interface NodeProps {
   onNodeMouseUp: (id: string, e: React.MouseEvent) => void;
   onDoubleClick: (id: string) => void;
   onLabelChange: (id: string, label: string) => void;
+  onStopEditing: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onLinkClick: (projectId: string) => void;
 }
 
 const EmailNode: React.FC<NodeProps> = (props) => {

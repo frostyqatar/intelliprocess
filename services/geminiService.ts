@@ -29,7 +29,7 @@ const responseSchema = {
         },
         edges: {
             type: Type.ARRAY,
-            description: "Array of edges connecting the nodes. Existing edges will be replaced. Do not connect to or from 'Email' nodes.",
+            description: "Array of edges connecting the nodes. Existing edges will be replaced.",
             items: {
                 type: Type.OBJECT,
                 properties: {
@@ -56,7 +56,7 @@ export async function generateDiagramFromPrompt(prompt: string, apiKey: string):
 - Create clear, concise labels.
 - The top-left of the canvas is (0,0). Layout is crucial. Follow a logical flow, primarily from left to right.
 - A typical horizontal gap between nodes is 150-200 pixels. A typical vertical gap is 100-150 pixels.
-- Use the 'Email' node type for notification steps. 'Email' nodes are standalone and should NOT have any edges connecting to or from them. Position them near relevant parts of the flow.
+- Use the 'Email' node type for notification steps. It can be part of the main flow.
 - For branching logic, when a 'Process' node is immediately followed by a 'Decision' node, place the 'Decision' node vertically below the 'Process' node to represent a query or check. Subsequent branches from the decision should flow outwards.
 - Ensure all node IDs in edges correspond to nodes you've defined.
 - Always include a 'Start' node and an 'End' node for the main process flow.
