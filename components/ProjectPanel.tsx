@@ -10,9 +10,12 @@ interface ProjectPanelProps {
   onAddProject: () => void;
   onDeleteProject: (id: string) => void;
   onRenameProject: (id: string, newName: string) => void;
-  onExport: (type: 'png' | 'json' | 'text' | 'pdf') => void;
+  onExport: (type: 'png' | 'json' | 'text' | 'pdf' | 'visio') => void;
   onExportAll: () => void;
   onImport: (file: File) => void;
+  onSelectDatabaseFile: () => void;
+  databaseFileName?: string;
+  databaseModeNote?: string;
 }
 
 export const ProjectPanel: React.FC<ProjectPanelProps> = ({
@@ -25,6 +28,9 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
   onExport,
   onExportAll,
   onImport,
+  onSelectDatabaseFile,
+  databaseFileName,
+  databaseModeNote,
 }) => {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
@@ -115,6 +121,7 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
           <div className="space-y-2">
             <button onClick={() => onExport('png')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FileDown className="mr-2" size={16} /> Export as PNG</button>
             <button onClick={() => onExport('pdf')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FilePdf className="mr-2" size={16} /> Export as PDF</button>
+            <button onClick={() => onExport('visio')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FileJson className="mr-2" size={16} /> Export as Visio</button>
             <button onClick={() => onExport('json')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FileJson className="mr-2" size={16} /> Export as JSON</button>
             <button onClick={() => onExport('text')} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"><FileText className="mr-2" size={16} /> Export as Text</button>
           </div>
@@ -129,6 +136,19 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
             <button onClick={onExportAll} className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition">
                 <FileJson className="mr-2" size={16} /> Export All as JSON
             </button>
+            <button
+              onClick={onSelectDatabaseFile}
+              className="w-full flex items-center bg-gray-700 hover:bg-gray-600 text-sm font-medium py-2 px-3 rounded-md transition"
+              title="Pick a JSON file to use as your working database (e.g. db_working.json). The app will write updates to it every 10 minutes."
+            >
+              <FileJson className="mr-2" size={16} /> Database File
+            </button>
+            {databaseFileName && (
+              <div className="text-xs text-gray-400 px-1">
+                Using: <span className="text-gray-300">{databaseFileName}</span>
+                {databaseModeNote ? <span className="ml-1">({databaseModeNote})</span> : null}
+              </div>
+            )}
           </div>
         </div>
       </div>

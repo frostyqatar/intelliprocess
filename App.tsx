@@ -8,11 +8,11 @@ import { Chatbot } from './components/Chatbot';
 import { ContextMenu } from './components/ContextMenu';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useAutoBackup } from './hooks/useAutoBackup';
-import { exportToPng, exportToJson, exportToText, exportToPdf } from './services/exportService';
+import { exportToPng, exportToJson, exportToText, exportToPdf, exportToVisio } from './services/exportService';
 import { generateDiagramFromPrompt } from './services/geminiService';
 import { autoLayout } from './services/layoutService';
 import { initialProjects } from './constants';
-import { Focus, ZoomIn, ZoomOut } from './components/icons';
+import { Focus, ZoomIn, ZoomOut, Hand, MousePointer } from './components/icons';
 
 type ContextMenuData = {
   x: number;
@@ -29,6 +29,15 @@ export default function App() {
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useLocalStorage<string | null>('gemini-api-key', null);
+  const [mode, setMode] = useState<'grab' | 'select'>('grab');
+
+  // File System Access-based working database file
+  const dbFileHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const [dbFileName, setDbFileName] = useState<string | undefined>(undefined);
+  const autosaveIntervalRef = useRef<number | null>(null);
+
+  // Undo stack
+  const undoStackRef = useRef<Project[][]>([]);
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -43,12 +52,15 @@ export default function App() {
   const activeProject = projects.find(p => p.id === activeProjectId);
 
   const updateProject = useCallback((updatedProject: Project) => {
+    // Push current state to undo stack before changing
+    undoStackRef.current.push(projects);
     setProjects(prevProjects =>
       prevProjects.map(p => (p.id === updatedProject.id ? updatedProject : p))
     );
   }, [setProjects]);
 
   const addProject = () => {
+    undoStackRef.current.push(projects);
     const id = `proj-${Date.now()}`;
     const newProject: Project = {
       id,
@@ -62,6 +74,7 @@ export default function App() {
 
   const deleteProject = (id: string) => {
     if (window.confirm(`Are you sure you want to delete this project? This action cannot be undone.`)) {
+        undoStackRef.current.push(projects);
         setProjects(prev => prev.filter(p => p.id !== id));
         if (activeProjectId === id) {
             setActiveProjectId(projects.length > 1 ? projects[0].id : null);
@@ -70,10 +83,11 @@ export default function App() {
   };
 
   const renameProject = (id: string, newName: string) => {
+    undoStackRef.current.push(projects);
     setProjects(prev => prev.map(p => p.id === id ? { ...p, name: newName.trim() || "Untitled Project" } : p));
   };
 
-  const handleExport = (type: 'png' | 'json' | 'text' | 'pdf') => {
+  const handleExport = (type: 'png' | 'json' | 'text' | 'pdf' | 'visio') => {
     if (!activeProject) return;
     switch (type) {
       case 'png':
@@ -81,6 +95,9 @@ export default function App() {
         break;
       case 'pdf':
         if (canvasRef.current) exportToPdf(activeProject, canvasRef.current, `${activeProject.name}.pdf`);
+        break;
+      case 'visio':
+        exportToVisio(activeProject, `${activeProject.name}.vdx`);
         break;
       case 'json':
         exportToJson(activeProject, `${activeProject.name}.json`);
@@ -127,6 +144,7 @@ export default function App() {
           return p;
         });
 
+        undoStackRef.current.push(projects);
         setProjects(prev => [...prev, ...sanitizedProjects]);
         if (sanitizedProjects.length > 0) {
           setActiveProjectId(sanitizedProjects[0].id);
@@ -161,6 +179,7 @@ export default function App() {
     if (!activeProject) return;
     const { nodes, edges } = activeProject;
     const { newNodes, newEdges } = autoLayout(nodes, edges, orientation);
+    undoStackRef.current.push(projects);
     updateProject({ ...activeProject, nodes: newNodes, edges: newEdges });
     // Use a timeout to ensure the DOM has updated before recentering
     setTimeout(handleRecenterAndZoom, 0);
@@ -249,6 +268,91 @@ export default function App() {
     closeContextMenu();
   };
 
+  // Ctrl+Z undo and Space to toggle mode
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
+      if (isUndo) {
+        const prev = undoStackRef.current.pop();
+        if (prev) {
+          setProjects(prev);
+          e.preventDefault();
+        }
+      }
+      
+      // Space to toggle between grab and select modes
+      if (e.key === ' ' && !editingNodeId && !editingEdgeId) {
+        e.preventDefault();
+        setMode(prev => prev === 'grab' ? 'select' : 'grab');
+      }
+      
+      // G key for grab mode, S key for select mode
+      if (!editingNodeId && !editingEdgeId) {
+        if (e.key.toLowerCase() === 'g') {
+          e.preventDefault();
+          setMode('grab');
+        } else if (e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          setMode('select');
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setProjects, editingNodeId, editingEdgeId]);
+
+  // Database file selection and autosave every 10 minutes
+  const handleSelectDatabaseFile = async () => {
+    try {
+      // File System Access API (supported in Chromium-based browsers)
+      // @ts-ignore
+      const handle: FileSystemFileHandle = await window.showSaveFilePicker({
+        suggestedName: 'db_working.json',
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+      });
+      dbFileHandleRef.current = handle;
+      setDbFileName(handle.name);
+
+      // Write immediately to initialize
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([JSON.stringify(projects, null, 2)], { type: 'application/json' }));
+      await writable.close();
+
+      // Clear existing interval and start a new 10-minute autosave
+      if (autosaveIntervalRef.current) {
+        window.clearInterval(autosaveIntervalRef.current);
+      }
+      autosaveIntervalRef.current = window.setInterval(async () => {
+        try {
+          if (!dbFileHandleRef.current) return;
+          const w = await dbFileHandleRef.current.createWritable();
+          await w.write(new Blob([JSON.stringify(projects, null, 2)], { type: 'application/json' }));
+          await w.close();
+          console.log('Autosaved database file');
+        } catch (err) {
+          console.error('Autosave failed:', err);
+        }
+      }, 10 * 60 * 1000);
+      alert('Database file selected. Autosave enabled every 10 minutes.');
+    } catch (err) {
+      if ((err as any)?.name !== 'AbortError') {
+        console.error('Selecting database file failed:', err);
+        alert('Failed to select a database file.');
+      }
+    }
+  };
+
+  // When projects change and DB file is selected, optionally do a light-touch append/remove to "touch" file every 10 minutes cycle
+  useEffect(() => {
+    // If desired, we could write on every change; but that may be too frequent. We'll keep interval-based autosave.
+  }, [projects]);
+
+  useEffect(() => () => {
+    if (autosaveIntervalRef.current) {
+      window.clearInterval(autosaveIntervalRef.current);
+    }
+  }, []);
+
   return (
     <div className="flex h-screen w-screen bg-gray-900 text-white font-sans antialiased overflow-hidden" onClick={closeContextMenu}>
       <ProjectPanel
@@ -261,9 +365,12 @@ export default function App() {
         onExport={handleExport}
         onExportAll={handleExportAllProjects}
         onImport={handleImportProjects}
+        onSelectDatabaseFile={handleSelectDatabaseFile}
+        databaseFileName={dbFileName}
+        databaseModeNote={'autosave every 10 min'}
       />
       <div className="flex-1 flex flex-col">
-        <Toolbar onAutoLayout={handleAutoLayout} />
+        <Toolbar onAutoLayout={handleAutoLayout} mode={mode} onModeChange={setMode} />
         <main className="flex-1 bg-gray-800 relative" id="canvas-container">
           {activeProject ? (
             <>
@@ -289,6 +396,7 @@ export default function App() {
                 setIsPanning={setIsPanning}
                 startPan={startPan}
                 setStartPan={setStartPan}
+                mode={mode}
               />
               <div className="absolute bottom-4 left-4 flex flex-col items-start space-y-2">
                 <div className="flex bg-gray-700 rounded-full shadow-lg p-1">
@@ -314,6 +422,25 @@ export default function App() {
                 >
                   <Focus size={20} />
                 </button>
+              </div>
+              
+              {/* Mode Status Indicator */}
+              <div className="absolute top-4 right-4 bg-gray-700 rounded-lg shadow-lg px-3 py-2 z-10">
+                <div className="flex items-center space-x-2">
+                  {mode === 'grab' ? (
+                    <>
+                      <Hand size={16} className="text-indigo-400" />
+                      <span className="text-sm text-gray-200">Grab Mode</span>
+                      <span className="text-xs text-gray-400 ml-2">(G)</span>
+                    </>
+                  ) : (
+                    <>
+                      <MousePointer size={16} className="text-indigo-400" />
+                      <span className="text-sm text-gray-200">Select Mode</span>
+                      <span className="text-xs text-gray-400 ml-2">(S)</span>
+                    </>
+                  )}
+                </div>
               </div>
             </>
           ) : (
