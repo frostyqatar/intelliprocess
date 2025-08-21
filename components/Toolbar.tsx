@@ -41,7 +41,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAutoLayout }) => {
   }, []);
 
   return (
-    <header className="h-16 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4 shadow-md z-10">
+    <header className="h-16 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4 shadow-md z-30">
       <div className="flex space-x-4">
         <DraggableShape type={ShapeType.Start} label="Start">
           <Circle className="text-green-400" />
@@ -59,7 +59,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAutoLayout }) => {
           <Circle className="text-amber-400" />
         </DraggableShape>
       </div>
-      <div className="relative" ref={dropdownRef}>
+      <div className="relative z-40" ref={dropdownRef}>
         <button 
           onClick={() => setIsLayoutOpen(prev => !prev)}
           className="flex items-center p-2 text-gray-300 hover:bg-gray-600 rounded-lg transition duration-200"
@@ -70,7 +70,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAutoLayout }) => {
           <ChevronDown className={`ml-1 transition-transform ${isLayoutOpen ? 'rotate-180' : ''}`} />
         </button>
         {isLayoutOpen && (
-          <div className="absolute right-0 mt-2 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg z-20 py-1">
+          <div className="absolute right-0 mt-2 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg z-50 py-1">
             <button
               onClick={() => { onAutoLayout('horizontal'); setIsLayoutOpen(false); }}
               className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-indigo-600"
