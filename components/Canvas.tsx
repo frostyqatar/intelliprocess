@@ -33,6 +33,7 @@ interface CanvasProps {
   startPan: Position;
   setStartPan: (pan: Position) => void;
   mode: 'grab' | 'select';
+  backgroundColor: string;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({ 
@@ -57,7 +58,8 @@ export const Canvas: React.FC<CanvasProps> = ({
     setIsPanning,
     startPan,
     setStartPan,
-    mode
+    mode,
+    backgroundColor
 }) => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
@@ -560,7 +562,9 @@ export const Canvas: React.FC<CanvasProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        className="bg-gray-800"
+        style={{
+          backgroundColor: backgroundColor === 'transparent' ? 'transparent' : backgroundColor
+        }}
       >
         <defs>
           <marker id="arrowhead" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">

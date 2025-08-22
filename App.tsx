@@ -30,6 +30,7 @@ export default function App() {
   const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useLocalStorage<string | null>('gemini-api-key', null);
   const [mode, setMode] = useState<'grab' | 'select'>('grab');
+  const [backgroundColor, setBackgroundColor] = useLocalStorage<string>('canvas-background-color', '#1f2937');
 
   // File System Access-based working database file
   const dbFileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -91,10 +92,10 @@ export default function App() {
     if (!activeProject) return;
     switch (type) {
       case 'png':
-        if (canvasContainerRef.current) exportToPng(canvasContainerRef.current, activeProject.name);
+        if (canvasRef.current) exportToPng(activeProject, canvasRef.current, activeProject.name, backgroundColor);
         break;
       case 'pdf':
-        if (canvasRef.current) exportToPdf(activeProject, canvasRef.current, `${activeProject.name}.pdf`);
+        if (canvasRef.current) exportToPdf(activeProject, canvasRef.current, `${activeProject.name}.pdf`, backgroundColor);
         break;
       case 'visio':
         exportToVisio(activeProject, `${activeProject.name}.vdx`);
@@ -268,7 +269,7 @@ export default function App() {
     closeContextMenu();
   };
 
-  // Ctrl+Z undo and Space to toggle mode
+  // Ctrl+Z undo and Tab to toggle mode
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
@@ -280,14 +281,14 @@ export default function App() {
         }
       }
       
-      // Space to toggle between grab and select modes
-      if (e.key === ' ' && !editingNodeId && !editingEdgeId) {
+      // Tab to toggle between grab and select modes (only if chatbot is closed)
+      if (e.key === 'Tab' && !editingNodeId && !editingEdgeId && !isChatbotOpen) {
         e.preventDefault();
         setMode(prev => prev === 'grab' ? 'select' : 'grab');
       }
       
-      // G key for grab mode, S key for select mode
-      if (!editingNodeId && !editingEdgeId) {
+      // G key for grab mode, S key for select mode (only if chatbot is closed)
+      if (!editingNodeId && !editingEdgeId && !isChatbotOpen) {
         if (e.key.toLowerCase() === 'g') {
           e.preventDefault();
           setMode('grab');
@@ -299,7 +300,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [setProjects, editingNodeId, editingEdgeId]);
+  }, [setProjects, editingNodeId, editingEdgeId, isChatbotOpen]);
 
   // Database file selection and autosave every 10 minutes
   const handleSelectDatabaseFile = async () => {
@@ -370,8 +371,20 @@ export default function App() {
         databaseModeNote={'autosave every 10 min'}
       />
       <div className="flex-1 flex flex-col">
-        <Toolbar onAutoLayout={handleAutoLayout} mode={mode} onModeChange={setMode} />
-        <main className="flex-1 bg-gray-800 relative" id="canvas-container">
+        <Toolbar 
+          onAutoLayout={handleAutoLayout} 
+          mode={mode} 
+          onModeChange={setMode}
+          backgroundColor={backgroundColor}
+          onBackgroundColorChange={setBackgroundColor}
+        />
+        <main 
+          className="flex-1 relative" 
+          id="canvas-container"
+          style={{
+            backgroundColor: backgroundColor === 'transparent' ? 'transparent' : backgroundColor
+          }}
+        >
           {activeProject ? (
             <>
               <Canvas
@@ -397,6 +410,7 @@ export default function App() {
                 startPan={startPan}
                 setStartPan={setStartPan}
                 mode={mode}
+                backgroundColor={backgroundColor}
               />
               <div className="absolute bottom-4 left-4 flex flex-col items-start space-y-2">
                 <div className="flex bg-gray-700 rounded-full shadow-lg p-1">
@@ -431,13 +445,13 @@ export default function App() {
                     <>
                       <Hand size={16} className="text-indigo-400" />
                       <span className="text-sm text-gray-200">Grab Mode</span>
-                      <span className="text-xs text-gray-400 ml-2">(G)</span>
+                      <span className="text-xs text-gray-400 ml-2">(Tab/G)</span>
                     </>
                   ) : (
                     <>
                       <MousePointer size={16} className="text-indigo-400" />
                       <span className="text-sm text-gray-200">Select Mode</span>
-                      <span className="text-xs text-gray-400 ml-2">(S)</span>
+                      <span className="text-xs text-gray-400 ml-2">(Tab/S)</span>
                     </>
                   )}
                 </div>

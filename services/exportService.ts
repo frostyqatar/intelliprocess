@@ -65,25 +65,48 @@ async function embedStyles(svg: SVGSVGElement, forPdf: boolean = false): Promise
 }
 
 
-export async function exportToPng(element: HTMLElement, fileName: string) {
-  const svgElement = element.querySelector('svg');
-  if (!svgElement) {
-    console.error("Export failed: SVG element not found.");
-    alert("Export failed: Could not find the canvas SVG element.");
+export async function exportToPng(project: Project, svgElement: SVGSVGElement, fileName: string, backgroundColor: string = '#1f2937') {
+  if (!project || project.nodes.length === 0) {
+    alert("Cannot export an empty project to PNG.");
     return;
   }
+
+  // 1. Calculate bounding box of the entire diagram to determine dimensions
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  project.nodes.forEach(node => {
+    minX = Math.min(minX, node.position.x);
+    minY = Math.min(minY, node.position.y);
+    maxX = Math.max(maxX, node.position.x + node.width);
+    maxY = Math.max(maxY, node.position.y + node.height);
+  });
+
+  const padding = 50;
+  const diagramWidth = maxX - minX;
+  const diagramHeight = maxY - minY;
+  const contentWidth = diagramWidth + padding * 2;
+  const contentHeight = diagramHeight + padding * 2;
+
+  // 2. Clone the SVG and prepare it for rendering without affecting the live canvas
+  const svgToRender = svgElement.cloneNode(true) as SVGSVGElement;
+  const g = svgToRender.querySelector('g');
+
+  if (g) {
+    // Adjust the transform to frame the entire diagram within the new viewport
+    g.setAttribute('transform', `translate(${-minX + padding}, ${-minY + padding}) scale(1)`);
+  }
+  
+  // Set explicit dimensions on the SVG for the rendering engine
+  svgToRender.setAttribute('width', `${contentWidth}`);
+  svgToRender.setAttribute('height', `${contentHeight}`);
   
   try {
-    const styledSvg = await embedStyles(svgElement, false);
-    
-    // Set explicit size for rendering
-    styledSvg.setAttribute('width', `${element.clientWidth}`);
-    styledSvg.setAttribute('height', `${element.clientHeight}`);
+    const styledSvg = await embedStyles(svgToRender, false);
     
     const dataUrl = await toPng(styledSvg as unknown as HTMLElement, {
-      pixelRatio: 2,
-      width: element.clientWidth,
-      height: element.clientHeight,
+      pixelRatio: 2, // Use 2x resolution for high quality
+      width: contentWidth,
+      height: contentHeight,
+      backgroundColor: backgroundColor === 'transparent' ? undefined : backgroundColor,
     });
 
     const link = document.createElement('a');
@@ -181,7 +204,7 @@ export function exportToText(project: Project, fileName: string) {
   downloadFile(content, fileName, 'text/plain');
 }
 
-export async function exportToPdf(project: Project, svgElement: SVGSVGElement, fileName: string) {
+export async function exportToPdf(project: Project, svgElement: SVGSVGElement, fileName: string, backgroundColor: string = '#1f2937') {
   if (!project || project.nodes.length === 0) {
     alert("Cannot export an empty project to PDF.");
     return;
@@ -224,7 +247,7 @@ export async function exportToPdf(project: Project, svgElement: SVGSVGElement, f
       pixelRatio: 2, // Use 2x resolution for high quality
       width: contentWidth,
       height: contentHeight,
-      backgroundColor: '#1f2937', // Match canvas background color (bg-gray-800)
+      backgroundColor: backgroundColor === 'transparent' ? '#ffffff' : backgroundColor,
     });
 
     // 4. Create a PDF with dimensions and orientation matching the diagram
